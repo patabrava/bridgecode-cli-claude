@@ -2,7 +2,7 @@ BRIDGECODE 4.3.2 — CLAUDE CODE EDITION — QUICK GUIDE
 
 Tell Claude the outcome you want. Bridgecode chooses ROBUST for consequential uncertainty and LEAN (PATCH, DEBUG, ASSESS) for sufficiently understood work. Both research as needed, resolve your decisions, define completion, execute within scope, validate, and check memory.
 
-Install or update with the exact commands in the package README (@bridgecode/cli-claude). Start a new Claude Code session afterward. CLAUDE.md imports the core from .claude/bridgecode/CORE.md, so Claude has it from the first message; you should not have to mention it. Optional project hooks in .claude/settings.json add a short per-turn reminder and a recovery pointer after compaction; review them with /hooks.
+Install or update with the exact commands in the package README (@patabrava/bridgecode-cli-claude). Start a new Claude Code session afterward. CLAUDE.md imports the core from .claude/bridgecode/CORE.md, so Claude has it from the first message; you should not have to mention it. Optional project hooks in .claude/settings.json add a short per-turn reminder and a recovery pointer after compaction; review them with /hooks.
 
 If this repository also uses Codex, install the Codex edition (@bridgecode/cli) for Codex. The two editions coexist: Codex reads AGENTS.md and bridgecode/, Claude Code reads CLAUDE.md and .claude/bridgecode/, and both share agentic/ memory.
 

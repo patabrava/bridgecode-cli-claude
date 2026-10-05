@@ -1,6 +1,6 @@
 # Changelog
 
-## 4.3.2 — Claude Code edition (`@bridgecode/cli-claude`)
+## 4.3.2 — Claude Code edition (`@patabrava/bridgecode-cli-claude`)
 
 First release of the Claude Code edition. It is forked from the Codex edition 4.3.2 and coexists with it in the same repository.
 

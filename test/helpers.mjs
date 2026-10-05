@@ -17,7 +17,7 @@ export async function snapshot(root){
   if(e.isDirectory())await walk(p);else if(e.isSymbolicLink())result[r]="symlink";else result[r]=sha256(await readFile(p));
  }}await walk(root);return result;
 }
-export async function writeManifest(root,name="@bridgecode/cli-claude",version="4.3.3"){
+export async function writeManifest(root,name="@patabrava/bridgecode-cli-claude",version="4.3.3"){
  const files={};for(const p of MANAGED_PATHS)files[p]=sha256(await readFile(path.join(root,PAYLOAD_DIR,p)));
  const hookHash=sha256(await readFile(path.join(root,"hooks/bridgecode-turn.mjs")));
  await writeFile(path.join(root,"payload-manifest.json"),JSON.stringify({package:name,edition:"claude-code",version,schemaVersion:1,files,hookHash},null,2)+"\n");

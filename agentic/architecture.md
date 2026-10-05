@@ -1,6 +1,6 @@
 # Bridgecode architecture — Claude Code edition
 
-Bridgecode has two layers: Markdown directs agent behavior, and a dependency-free Node CLI installs and verifies that policy. The CLI does not run processflows or certify model compliance. This repository is the Claude Code edition, `@bridgecode/cli-claude`, forked from the Codex edition `@bridgecode/cli` 4.3.2. Both editions can be installed in one project: they own disjoint paths and share `agentic/` memory. The permanent core is imported into Claude Code through a `CLAUDE.md` bootstrap. Six specialists load before the actions they govern, and a read-only reviewer subagent performs bounded review. Project memory is repository-owned and stays outside the installed package set.
+Bridgecode has two layers: Markdown directs agent behavior, and a dependency-free Node CLI installs and verifies that policy. The CLI does not run processflows or certify model compliance. This repository is the Claude Code edition, `@patabrava/bridgecode-cli-claude`, forked from the Codex edition `@bridgecode/cli` 4.3.2. Both editions can be installed in one project: they own disjoint paths and share `agentic/` memory. The permanent core is imported into Claude Code through a `CLAUDE.md` bootstrap. Six specialists load before the actions they govern, and a read-only reviewer subagent performs bounded review. Project memory is repository-owned and stays outside the installed package set.
 
 ## Maintained-file map
 
@@ -9,7 +9,7 @@ Bridgecode_Claude/
 ├── README.md                      Install/update contract, edition choice, coexistence, release limits
 ├── CHANGELOG.md                   Claude edition changes, then the Codex lineage
 ├── LICENSE                        MIT license
-├── package.json                   @bridgecode/cli-claude, bin bridgecode-claude, npm allowlist
+├── package.json                   @patabrava/bridgecode-cli-claude, bin bridgecode-claude, npm allowlist
 ├── payload-manifest.json          Generated: package, edition, version, payload and hook hashes
 ├── .gitattributes / .gitignore    Line endings; ignores caches, archives, secrets, private notes
 ├── .github/workflows/publish.yml  Tag/version gate, regression, exact-artifact publication
@@ -116,6 +116,6 @@ The ladder from [Ponytail](https://github.com/DietrichGebert/ponytail/blob/main/
 
 ## Run and release
 
-From the repository root: `npm run build:manifest`, `npm test`, `npm run test:release`. Add `-- --output release` to keep the exact tested archive for an authorized publish. The workflow is gated on `claude-v<version>` tags, distinct from the Codex edition's `v*` tags, and publishes `release/bridgecode-cli-claude-<version>.tgz` after its checks. Local work never publishes.
+From the repository root: `npm run build:manifest`, `npm test`, `npm run test:release`. Add `-- --output release` to keep the exact tested archive for an authorized publish. The workflow is gated on `claude-v<version>` tags, distinct from the Codex edition's `v*` tags, and publishes `release/patabrava-bridgecode-cli-claude-<version>.tgz` after its checks. Local work never publishes.
 
 A standalone checkout skips only the source-parity check (`../claude_condensation` absent), never the artifact test.

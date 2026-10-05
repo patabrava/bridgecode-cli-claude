@@ -1,11 +1,11 @@
 {
-  "package": "@bridgecode/cli-claude",
+  "package": "@patabrava/bridgecode-cli-claude",
   "edition": "claude-code",
   "version": "4.3.2",
   "schemaVersion": 1,
   "files": {
     ".claude/bridgecode/CORE.md": "723e20206ade67a22a7f1d8e303fd2c81d2b7a05ed48f6fc3488ed42e5d747a6",
-    ".claude/bridgecode/README_HUMAN.txt": "91414c816230171f1d6288afe2b56db583dd2adb6bda98df199822769eb384d3",
+    ".claude/bridgecode/README_HUMAN.txt": "d3d7881c9e795020d67836947bc3e4920b256a08940b353c1dfd56843450abd2",
     ".claude/bridgecode/best-agent.md": "4efd4339c1b2b29dab743d7adb580647bab1f69c513901ed41c82f4a65910056",
     ".claude/bridgecode/taste.md": "0e460f6da330987665b5372e1b3730e139264e638fbdb64835b47d51d130ffb1",
     ".claude/bridgecode/design.md": "e3cb09332d80ba8dba7db19fe9ee2d1d5c1d76804d079543f7c8277ba332cd98",

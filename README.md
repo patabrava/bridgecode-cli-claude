@@ -1,12 +1,12 @@
 # Bridgecode 4.3.2 — Claude Code edition
 
-Bridgecode gives Claude Code a compact operating policy, on-demand specialists, a read-only reviewer subagent, and repository memory grounded in verified code. `@bridgecode/cli-claude` installs it locally with Node 22+ and no runtime dependencies. It does not add dependencies or lockfiles to your project. The short human guide is installed at `.claude/bridgecode/README_HUMAN.txt`.
+Bridgecode gives Claude Code a compact operating policy, on-demand specialists, a read-only reviewer subagent, and repository memory grounded in verified code. `@patabrava/bridgecode-cli-claude` installs it locally with Node 22+ and no runtime dependencies. It does not add dependencies or lockfiles to your project. The short human guide is installed at `.claude/bridgecode/README_HUMAN.txt`.
 
 > **Pick the edition that matches the harness doing the work.**
 >
 > | Harness | Package | Installs |
 > | --- | --- | --- |
-> | **Claude Code** | `@bridgecode/cli-claude` (this package) | `CLAUDE.md` import, `.claude/bridgecode/`, `.claude/agents/bridgecode-reviewer.md`, `.claude/settings.json` hooks |
+> | **Claude Code** | `@patabrava/bridgecode-cli-claude` (this package) | `CLAUDE.md` import, `.claude/bridgecode/`, `.claude/agents/bridgecode-reviewer.md`, `.claude/settings.json` hooks |
 > | **Codex** | `@bridgecode/cli` | `AGENTS.md`, `bridgecode/`, `.codex/hooks.json` |
 >
 > A repository worked on by both harnesses can carry both editions. They own disjoint files and share `agentic/` memory. In that case, install the Codex edition with `--instruction-files agents` so it does not also register its bootstrap in `CLAUDE.md`.
@@ -25,9 +25,9 @@ overwriting it. If the sandbox or a permission prompt blocks writes to .claude/,
 stop and give me the commands to run myself with the ! prefix. Afterwards, tell me
 to start a new Claude Code session and review the hooks with /hooks.
 
-npx -y @bridgecode/cli-claude@4.3.2 install --project . --dry-run
-npx -y @bridgecode/cli-claude@4.3.2 install --project .
-npx -y @bridgecode/cli-claude@4.3.2 doctor --project .
+npx -y @patabrava/bridgecode-cli-claude@4.3.2 install --project . --dry-run
+npx -y @patabrava/bridgecode-cli-claude@4.3.2 install --project .
+npx -y @patabrava/bridgecode-cli-claude@4.3.2 doctor --project .
 ```
 
 Claude Code's sandbox and permission rules usually protect `.claude/settings.json` and `.claude/hooks/`. Running the install yourself is the simplest path. Type each command with the `!` prefix in the Claude Code prompt, or run it in a normal terminal. A blocked write rolls the transaction back and leaves the project unchanged.
@@ -41,9 +41,9 @@ unrelated CLAUDE.md content, settings, hooks, Codex edition files and agentic/
 memory. Stop on integrity or ownership conflicts. Report installation integrity
 separately from live hook delivery. Tell me to start a new session afterwards.
 
-npx -y @bridgecode/cli-claude@4.3.2 update --project . --dry-run
-npx -y @bridgecode/cli-claude@4.3.2 update --project .
-npx -y @bridgecode/cli-claude@4.3.2 doctor --project .
+npx -y @patabrava/bridgecode-cli-claude@4.3.2 update --project . --dry-run
+npx -y @patabrava/bridgecode-cli-claude@4.3.2 update --project .
+npx -y @patabrava/bridgecode-cli-claude@4.3.2 doctor --project .
 ```
 
 ## What is installed
@@ -86,7 +86,7 @@ Dry-run verifies payload checksums, complete ownership metadata, bootstrap marke
 Writes use a journal (`.bridgecode/claude-transaction.json`), precondition checks and per-file atomic replacement. Multi-file writes are not filesystem-atomic. A detected failure attempts rollback. If recovery cannot safely finish, the journal and original bytes remain; preserve that file. After confirming no transaction owner is running, use:
 
 ```sh
-npx -y @bridgecode/cli-claude@4.3.2 recover --project .
+npx -y @patabrava/bridgecode-cli-claude@4.3.2 recover --project .
 ```
 
 Recovery refuses targets changed outside the transaction and retains evidence for manual reconciliation. `--json` provides machine-readable results. Conflicts exit nonzero and never silently force an overwrite.
@@ -103,6 +103,6 @@ npm test
 npm run test:release
 ```
 
-The release test packs once and installs that exact artifact into a disposable host. It runs its CLI in a disposable repository, checks the allowlist, and removes its fixtures and npm cache. `npm run test:release -- --output release` keeps the exact verified archive for publication. The tag-gated workflow tests and publishes that artifact. It uses its own tag scheme so it never collides with the Codex edition's `v*` tags: push `claude-v4.3.2` for package version `4.3.2`, and configure npm trusted publishing for the repository first. For a manual publish, publish the tested archive (`npm publish ./release/bridgecode-cli-claude-4.3.2.tgz --access public`). Add `--provenance=false` when not publishing from CI. Never publish an untested rebuild.
+The release test packs once and installs that exact artifact into a disposable host. It runs its CLI in a disposable repository, checks the allowlist, and removes its fixtures and npm cache. `npm run test:release -- --output release` keeps the exact verified archive for publication. The tag-gated workflow tests and publishes that artifact. It uses its own tag scheme so it never collides with the Codex edition's `v*` tags: push `claude-v4.3.2` for package version `4.3.2`, and configure npm trusted publishing for the repository first. For a manual publish, publish the tested archive (`npm publish ./release/patabrava-bridgecode-cli-claude-4.3.2.tgz --access public`). Add `--provenance=false` when not publishing from CI. Never publish an untested rebuild.
 
 Known limits: live hook delivery, `@` import resolution and subagent behavior depend on the installed Claude Code version and are not certified by tests. Hook commands rely on the shell expanding `$CLAUDE_PROJECT_DIR`.
