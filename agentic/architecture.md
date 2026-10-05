@@ -1,96 +1,121 @@
-# Bridgecode architecture
+# Bridgecode architecture — Claude Code edition
 
-Bridgecode has two layers: Markdown directs agent behavior; a dependency-free Node CLI installs and verifies that policy. The CLI does not run processflows or certify model compliance. The authoring source is the sibling `codex_condensation/`; `scripts/sync-payload.mjs` copies it into this independently versioned npm repository. The root core is permanent context; six specialists load before the actions they govern. Project memory is repository-owned and remains outside the installed package core.
+Bridgecode has two layers: Markdown directs agent behavior, and a dependency-free Node CLI installs and verifies that policy. The CLI does not run processflows or certify model compliance. This repository is the Claude Code edition, `@bridgecode/cli-claude`, forked from the Codex edition `@bridgecode/cli` 4.3.2. Both editions can be installed in one project: they own disjoint paths and share `agentic/` memory. The permanent core is imported into Claude Code through a `CLAUDE.md` bootstrap. Six specialists load before the actions they govern, and a read-only reviewer subagent performs bounded review. Project memory is repository-owned and stays outside the installed package set.
 
 ## Maintained-file map
 
 ```text
-codex_package/
-├── AGENTS.md                     Permanent policy, routing, acceptance, memory, specialist triggers
-├── README.md                     Agent install/update contract, commands, ownership, release limits
-├── README_HUMAN.txt               Compact human operating guide (synced from source)
-├── CHANGELOG.md                  Release changes and compatibility boundaries
-├── LICENSE                       MIT license
-├── package.json                  CLI entry, Node requirement, scripts, explicit npm allowlist
-├── payload-manifest.json         Generated canonical policy and hook hashes
-├── .gitattributes                Checkout line-ending policy
-├── .gitignore                    Excludes caches, archives, secrets, release output, private note
-├── .github/workflows/publish.yml Tag/version gate, regression, exact-artifact publication
-├── bin/bridgecode.mjs            Executable dispatch into src/cli.mjs
-├── bridgecode/
-│   ├── best-agent.md             Evidence, hard-to-vary mechanisms, perspective transfer
-│   ├── taste.md                  Task-local defaults, exclusion, stances, minimal amalgams
-│   ├── design.md                 Direct frontend authorship, three references, UI validation
-│   ├── writing.md                Reader progression, factual fidelity, unslop critique
-│   ├── copywriting.md            Customer outcome, credible value, useful product language
-│   └── monoprompting.md          Self-contained reusable instruction contracts
-├── hooks/bridgecode-turn.mjs     Source of the installed bounded heartbeat/recovery hook
-├── legacy/{4.1.0,4.3.0,4.3.1}.json Exact prior payload snapshots for trusted migration validation
+Bridgecode_Claude/
+├── README.md                      Install/update contract, edition choice, coexistence, release limits
+├── CHANGELOG.md                   Claude edition changes, then the Codex lineage
+├── LICENSE                        MIT license
+├── package.json                   @bridgecode/cli-claude, bin bridgecode-claude, npm allowlist
+├── payload-manifest.json          Generated: package, edition, version, payload and hook hashes
+├── .gitattributes / .gitignore    Line endings; ignores caches, archives, secrets, private notes
+├── .github/workflows/publish.yml  Tag/version gate, regression, exact-artifact publication
+├── bin/bridgecode-claude.mjs      Executable dispatch into src/cli.mjs
+├── payload/                       Mirror of the installed tree (source path = payload/<target>)
+│   └── .claude/
+│       ├── bridgecode/
+│       │   ├── CORE.md            Permanent policy: routing, entry gate, stages, review, memory, harness
+│       │   ├── best-agent.md      Intent, perspective transfer, error forecast
+│       │   ├── taste.md           Creative direction: widen, commit, lenses, quality floor
+│       │   ├── design.md          Direct frontend authorship, written direction plan, UI validation
+│       │   ├── writing.md         Editing fidelity vs creative latitude, reader-side revision
+│       │   ├── copywriting.md     Customer outcome, credible value, bold concepts within truth
+│       │   ├── monoprompting.md   Reusable prompts, skills, subagents, hook messages, corrections
+│       │   └── README_HUMAN.txt   Installed human guide
+│       └── agents/bridgecode-reviewer.md  Read-only reviewer: packet, relevance gate, verdict format
+├── hooks/bridgecode-turn.mjs      Source of the installed heartbeat/compaction hook
 ├── src/
-│   ├── cli.mjs                   Argument parsing and install/update/doctor/recover dispatch
-│   ├── install.mjs               Shared lifecycle projection, ownership checks, mutation plan
-│   ├── update.mjs                Update entry into the shared lifecycle
-│   ├── manifest.mjs              Package identity, checksums, complete paths, safeTarget
-│   ├── verification.mjs          Canonical release comparison and informational root byte count
-│   ├── repo-rules.mjs            Core markers, rule extraction and lossless architecture imports
-│   ├── instructions.mjs          Bounded cross-harness bootstrap parsing/replacement
-│   ├── hooks.mjs                 Owned hook-entry merge preserving unrelated configuration
-│   ├── transaction.mjs           Journal, preconditions, per-file replacement, guarded recovery
-│   └── doctor.mjs                Read-only integrity checks, warnings, explicit evidence limits
+│   ├── cli.mjs                    Argument parsing and install/update/doctor/recover dispatch
+│   ├── install.mjs                Lifecycle projection, ownership checks, Codex detection, summary
+│   ├── update.mjs                 Update entry into the shared lifecycle
+│   ├── manifest.mjs               Paths/constants, payload allowlist, checksums, safeTarget
+│   ├── verification.mjs           releaseFor (current or legacy snapshot) and canonical verifyInstalled
+│   ├── instructions.mjs           CLAUDE.md bootstrap build/parse/upsert/remove, path policy
+│   ├── hooks.mjs                  .claude/settings.json entry merge preserving unrelated config
+│   ├── transaction.mjs            Journal, preconditions, per-file replacement, guarded recovery
+│   └── doctor.mjs                 Read-only integrity checks, coexistence and memory warnings
 ├── scripts/
-│   ├── sync-payload.mjs          Authoring-source copy and clean obsolete-source retirement
-│   ├── build-manifest.mjs        Deterministic release hash generation
-│   └── test-release.mjs          Pack once, test artifact, optionally retain that same archive
+│   ├── sync-payload.mjs           Copy ../claude_condensation (installed-tree layout) into payload/
+│   ├── build-manifest.mjs         Deterministic manifest generation from payload/
+│   └── test-release.mjs           Pack once, test the artifact, optionally retain that same archive
 ├── test/
-│   ├── helpers.mjs               Disposable project/release fixtures and byte-hash snapshots
-│   ├── lifecycle.test.mjs        Real install/update, migrations, bootstraps, memory preservation
-│   ├── safety.test.mjs           Conflicts, canonical tampering, containment, rollback/recovery
-│   ├── hooks.test.mjs            Actual installed script with event input; protocol validation
-│   ├── policy.test.mjs           Source parity and static policy anchors; not behavioral proof
-│   └── tarball.test.mjs          Exact npm artifact lifecycle and package allowlist
+│   ├── helpers.mjs                Realpath fixtures, snapshots, simulated next release, Codex stand-in
+│   ├── lifecycle.test.mjs         Install/update/no-op, CLAUDE.md preservation, coexistence, settings
+│   ├── safety.test.mjs            Tampering, collisions, allowlist, links, reserved targets, rollback
+│   ├── hooks.test.mjs             Installed hook with real event input; integrity fallback
+│   ├── policy.test.mjs            Static policy anchors and source parity; not behavioral proof
+│   └── tarball.test.mjs           Exact npm artifact lifecycle and package allowlist
 └── agentic/
-    ├── analysis.md (when active) Temporary first-block decision brief, checklist and recovery
-    ├── architecture.md          This maintained implementation map
-    ├── engineering-distillation.md Compact source-preserving 4.0/4.1 reference; not runtime policy
-    └── primitives-private.md    Private explanatory audit; gitignored and excluded from npm
+    ├── analysis.md (when active)  Temporary first-block decision brief, checklist and recovery
+    ├── architecture.md            This maintained implementation map
+    └── engineering-distillation.md Source-preserving 4.0/4.1 reference; not runtime policy
 ```
 
-Old local `.tgz` files are ignored release artifacts, not current source. Disposable test repositories, npm caches, and simulated releases live under OS temporary directories and are cleaned by their creating tests. The separately requested private primitives note is gitignored and excluded from npm; it is not runtime guidance.
+The private primitives note (`primitives.md` at the root, or `agentic/primitives-private.md`) is gitignored, excluded from npm and is not runtime guidance. Disposable test repositories, npm caches and simulated releases live under OS temporary directories and are cleaned by their creating tests.
 
-## Installation flow and ownership
+## Installed layout and ownership
 
-`prepareLifecycle` loads and validates the release, reads current target state into preconditions, verifies any prior installation against its trusted canonical snapshot, then projects every intended write/removal in memory. It checks the projected final state before dry-run can succeed. Real execution serializes mutation using an exclusively created journal, rechecks observations, applies changes, and verifies the actual result. A no-op still invokes actual verification.
+The edition owns:
 
-The managed AGENTS schema-2 block is immutable during ordinary project work. In 4.3.1, `migrateRules` transfers recognized rule bodies into repository-owned `agentic/architecture.md` in the same journaled transaction as the core replacement. Existing architecture bytes remain intact; imports state that constraints are binding and their implementation is unverified. Unrelated prefix/suffix content moves after the core in its original relative order. Explicit rule markers and clearly named Markdown repo-rule sections establish mechanical boundaries; fenced examples are preserved. Unknown ownership requires agent-assisted reconciliation. Exact unmarked 4.1 and 4.3 sources have trusted adoption paths; locally changed core content is refused.
+- the payload targets `.claude/bridgecode/*` and `.claude/agents/bridgecode-reviewer.md`
+- the optional hook script `.claude/hooks/bridgecode-turn.mjs` and its two entries in `.claude/settings.json`
+- one `bridgecode-claude:bootstrap` block per registered `CLAUDE.md`
+- the metadata `.bridgecode/claude-installation.json` and the journal `.bridgecode/claude-transaction.json`
 
-Semantic reconciliation belongs to the agent: inspect applicable constraints before affected work, map verified code/tests beside responsible files, merge duplicates without losing requirements, and retain unimplemented constraints in architecture memory. Rule relocation authorizes no application refactor and does not prove implementation. The CLI and doctor distinguish installed integrity from pending semantic verification. Repeated updates create no duplicate imports because migrated source sections are removed transactionally. Architecture stays outside the package-owned file set.
+`manifest.isAllowedPayloadPath` rejects any manifest target outside `.claude/bridgecode/` and `.claude/agents/bridgecode-*.md`.
 
-`adoptLegacy` bounds unmarked 4.1 rules at the next peer/ancestor heading while ignoring fenced examples; later unrelated sections stay in AGENTS.md. `migrateRules` extracts external rule markers on first installation as well as updates. It preserves a separately extracted legacy body alongside an external body; schema-2 parsed rules already represent that external body and must not be duplicated. These boundaries are protected by combined-source lifecycle dry-run/rollback/no-op tests. Malformed markers and linked architecture destinations fail before any rule movement.
+The bootstrap's `@` line imports `CORE.md` relative to the registering file (root → `@.claude/bridgecode/CORE.md`, `.claude/CLAUDE.md` → `@bridgecode/CORE.md`). Instruction targets must be named `CLAUDE.md` and avoid reserved paths, including the Codex-owned `bridgecode/`, `.codex/` and `AGENTS.md`. Claude Code loads `CLAUDE.md` and `.claude/CLAUDE.md` from the launch directory and its ancestors. `instructions.bootstrapScope` captures that rule. Install's `coreAutoloaded` and doctor's warning count only root-scope bootstraps. The hook compares each bootstrap's scope with the event `cwd` before saying "do not re-read" and otherwise tells Claude to read the core once. Hook commands use `$CLAUDE_PROJECT_DIR`, so the committed settings file works in any checkout; metadata deliberately records no project root.
 
-`verifyInstalled` compares the complete expected set, actual bytes, bootstrap blocks, and hook entries with a trusted release. Editing metadata hashes cannot legitimize a changed canonical file. Future versions require explicit trusted snapshots for supported predecessors. `.bridgecode/installation.json` stores the real project root because installed hook commands use an absolute path; moving a project requires explicit reconciliation. This intentionally has no speculative automatic relocation or downgrade mechanism.
+Coexistence is a hard boundary. The edition never writes, moves or retires root `AGENTS.md`, `bridgecode/`, root `README_HUMAN.txt`, `.codex/`, `.bridgecode/installation.json` or `.bridgecode/transaction.json`. `install.detectCodex` only peeks at them for reporting, outside the transaction preconditions. Codex bootstrap markers (`bridgecode:bootstrap:`) are never parsed for ownership or edited, and its marker namespace does not overlap `bridgecode-claude:bootstrap:`. Install and doctor warn when a registered `CLAUDE.md` also carries the Codex bootstrap. `install.codexRemovalCommand` then prints the Codex CLI removal command, built from the Codex metadata so that the Codex edition's non-`CLAUDE.md` bootstraps are re-listed and survive. `test/lifecycle.test.mjs` asserts Codex bytes stay identical through install, update, hook disabling and doctor.
+
+## Installation flow
+
+`prepareLifecycle`:
+
+1. Refuses a pending journal.
+2. Verifies any existing installation against its trusted release, either the current manifest or `legacy/<version>.json`.
+3. Projects every payload write, retirement, hook merge, bootstrap upsert or removal, and the metadata, entirely in memory.
+4. Checks the projected final state with `verifyInstalled` before a dry-run can succeed.
+
+A real run writes through `applyTransaction`, which uses an exclusively created journal, rechecks observations, applies the changes and verifies the actual result. A no-op still runs verification. An unowned existing payload target or hook script is a conflict even when its bytes match. Previously managed files are retired only when unchanged.
+
+`verification.verifyInstalled` compares the complete expected key set, the actual bytes, the exact bootstrap blocks and the hook entries against the trusted release. Editing metadata hashes cannot legitimize changed canonical content. No `legacy/` snapshots ship in this first edition release. The next release must add `legacy/4.3.2.json` (`{version, edition, schemaVersion, files, hookHash}`) and put `legacy/` back in the npm `files` allowlist; `simulatedPackage` in the tests shows the format.
 
 ## Corrections and regression protection
 
-`manifest.safeTarget` rejects symlink/junction components and non-file targets before file access. Normalized relative paths reject traversal, device names, stream separators, and cross-platform aliases. `prepareLifecycle` reserves Git/agent configuration and memory/hook/state paths case-insensitively, rejects newly introduced paths already owned by the repository even when their bytes match, and retires only unchanged previously owned files. Identical-byte adoption is limited to recognized current-source installation. Marker parsers reject extra malformed tokens beside valid blocks. These mechanisms replace lexical-containment and permissive ownership assumptions. `safety.test.mjs` covers linked parents, traversal, aliases, collisions, malformed markers, edited retired files, and modified canonical content. These checks reduce accidental races; they are not a security boundary against an adversary changing filesystem entries between system calls.
+`manifest.safeTarget` rejects symlink/junction components and non-file targets. Normalized relative paths reject traversal, device names, stream separators and cross-platform aliases. These measures reduce accidental races but are not a security boundary against an adversary changing entries between system calls.
 
-`verification.verifyInstalled` replaces self-consistent-but-untrusted metadata checks with canonical comparison and exact expected-key coverage. `instructionBudget` now only measures root AGENTS.md; it never rejects size. Doctor's large-file warning is informational. Actual host discovery remains bounded by host configuration, as documented in [official AGENTS.md guidance](https://learn.chatgpt.com/docs/agent-configuration/agents-md); the installer never changes global settings. Lifecycle tests cover mixed LF/CRLF Unicode rules, 4.3.0 hooks/bootstraps, unmarked source adoption, existing architecture, dry-run, two-file rollback and idempotence. Legacy canonical EOL detection uses the managed opening line, so line endings inside mutable rules cannot change canonical reconstruction.
+`transaction.recoverTransaction` restores only unchanged originals or known transaction output. It retains the journal on outside edits or failed restoration, and refuses recovery while another recorded owner may be alive. Multi-file updates are journaled, not filesystem-atomic.
 
-`transaction.applyTransaction` records originals and intended hashes in `.bridgecode/transaction.json`, checks preconditions, and runs post-verification. `recoverTransaction` restores only unchanged originals or known transaction output, retains the journal on outside edits or failed restoration, and refuses recovery while another recorded owner may be alive. It removes only recorded empty directories after successful recovery. `safety.test.mjs` exercises post-check failure, rollback, preserved outside edits, retryable recovery, and precondition conflict. Multi-file updates are journaled, not filesystem-atomic; do not erase failed-recovery material.
+`hooks.mergeHooks` owns only entries whose command contains `/.claude/hooks/bridgecode-turn.mjs`. Recorded entries must match their hash exactly, unrecorded owned entries are refused, and invalid JSON fails before any write. The settings file is never deleted.
 
-`hooks.mergeHooks` owns only recorded Bridgecode entries and its script; other hook entries/keys survive. The hook validates project/core identity, emits a short UserPromptSubmit reminder, and returns bounded core guidance for compact SessionStart. Its fixtures verify JSON output/fallback, not host trust or live delivery. Hook context follows the [official hook contract](https://learn.chatgpt.com/docs/hooks). Both native implementation reviewers use the implementing root’s same active model and reasoning effort. Use guaranteed native inheritance without routing overrides, or explicitly match verified active settings; unrelated defaults do not establish the active settings. Unavailable matching review remains incomplete and requires user direction.
+`test/helpers.fixture` returns the realpath of each temporary directory. This fixed two pre-existing macOS failures caused by `/tmp` → `/private/tmp` links.
+
+The hook emits a short UserPromptSubmit reminder and, for SessionStart `compact`, a recovery pointer to `agentic/analysis.md` rather than re-injecting the core. The `CLAUDE.md` import keeps the core in context; the hook says to read `CORE.md` once only if it is missing. Hook fixtures verify JSON output and the integrity fallback, not host trust or live delivery.
+
+## Policy decisions specific to this edition
+
+These are user-directed C-policy changes from the Codex 4.3.2 core:
+
+- **Best Agent depth.** Best Agent loads for every task that changes code, content or configuration. The anticipatory-correction move becomes an error forecast, revisited after research, before the first edit and before handoff.
+- **Memory over re-reading.** `analysis.md` and `architecture.md` are the trusted working memory. Claude writes findings as it goes, re-verifies only what the next action depends on, never re-reads the loaded core and never wraps up early for context. This counters the context paranoia the Codex wording induced in Claude.
+- **Creative latitude.** Writing, prompting and design use "widen, then commit" with a light quality floor.
+- **Design planning.** Image generation is removed; a written direction plan in `DESIGN.md` replaces the three reference images.
+- **Review.** Review uses the installed `bridgecode-reviewer` and never `fork`. The agent has `model: inherit` and Read, Grep, Glob and Bash restricted by contract to inspection. Bash is listed because some Claude Code builds expose no Grep or Glob tools, which would leave a reviewer with only Read. Same-model is required. Reasoning effort cannot be verified in Claude Code, so it is recorded as inherited and unverified instead of blocking. This changes the Codex same-effort requirement.
+
+`policy.test.mjs` anchors these wordings statically; it does not establish model behavior.
+
+## Source and adaptation
+
+`engineering-distillation.md` re-encodes the 4.0/4.1 excerpts as authoring reference. The runtime core keeps the 4.3.2 stage-embedded engineering policy and the bounded review cycle unchanged apart from the harness mechanics above.
+
+The ladder from [Ponytail](https://github.com/DietrichGebert/ponytail/blob/main/skills/ponytail/SKILL.md) is retained in the Execute stage: understand callers first, reuse before new code, repair the shared cause. Its complexity-only review is not adopted as a separate pass. Concrete simpler-mechanism findings must pass the same relevance gate, and Ponytail's benchmark claims are not Bridgecode evidence.
 
 ## Run and release
 
-From this package directory: `npm run sync:payload` in the paired authoring workspace; `npm run build:manifest`; `npm test`; `npm run test:release`. The final command creates one archive, tests its actual executable, checks the allowlist, and cleans fixtures. `-- --output release` retains the exact tested archive for an authorized publish. The tag-gated workflow publishes that artifact after checks; local implementation does not publish. A standalone checkout explicitly skips only the unavailable sibling-source parity check, not release-artifact testing.
+From the repository root: `npm run build:manifest`, `npm test`, `npm run test:release`. Add `-- --output release` to keep the exact tested archive for an authorized publish. The workflow is gated on `claude-v<version>` tags, distinct from the Codex edition's `v*` tags, and publishes `release/bridgecode-cli-claude-<version>.tgz` after its checks. Local work never publishes.
 
-Tests establish deterministic lifecycle and hook-protocol behavior. Policy walkthroughs and static anchors do not establish improved coding performance; matched agent tasks and live trusted-host sessions would be separate evidence.
-
-The 4.3.1 entry gate lives in AGENTS.md; Best Agent and the heartbeat point to that authority. Every turn declares the route and per-stage reasons, points to analysis.md, and creates/revalidates its first-block three-move operational brief before task-directed work. Necessary instruction/memory reads precede the write; research refines provisional choices in place. Read-only and exact-output constraints have compatible exceptions. Same-objective follow-ups update one temporary board; paused/concurrent work survives; completion condenses durable knowledge and removes finished state. `policy.test.mjs` protects these wording boundaries and `hooks.test.mjs` checks actual emitted reminders, without claiming universal agent compliance.
-
-The 4.3.2 shared stages carry engineering policy at its decision point. Research establishes sufficient applicable evidence; planning freezes the acceptance contract; execution selects the smallest adequate local mechanism; review admits concrete acceptance blockers; condensation records verified facts without reopening improvement work. The review state is first PASS → root verification, or first FIX/REPLAN → one correction stage → terminal PASS/UNRESOLVED; no third implementation reviewer. Recovery preserves cycle identity, phase and spent budget. The CLI installs this policy; it is not a new runtime state-machine service. Contract anchors and actual hook-output tests protect wording/transport; no claim of empirical loop elimination follows.
-
-Source and adaptation remain distinct. `engineering-distillation.md` re-encodes the user-supplied 4.0/4.1 excerpts as one block, retaining historical route names, numeric guidance and qualifications; it is authoring reference excluded from npm. Runtime rules selectively preserve their locality, boundary and proportionality mechanisms, treat LOC/reuse counts as context-dependent guidance, and adopt the user's newer bounded review/test policy where it differs from historical full-block repetition.
-
-From [Ponytail's ladder and safeguards](https://github.com/DietrichGebert/ponytail/blob/main/skills/ponytail/SKILL.md): understand affected code/callers first; prefer existing behavior, reuse, standard/library-platform capability and installed tools before minimal new code; repair the shared cause; keep real safety and requested behavior. Its [complexity-only review](https://github.com/DietrichGebert/ponytail/blob/main/skills/ponytail-review/SKILL.md) is not adopted as a separate pass. Shortest-diff scoring, automatic feature substitution, persistent intensity modes and rigid tiny-test limits would conflict with Bridgecode's explicit acceptance/host rules. Concrete simpler-mechanism findings must pass the same blocker gate. Ponytail's benchmark claims are not Bridgecode evidence.
-
-The private primitives reference revision 2.2 explicitly constructs stage guards and bounded review through existing Task/State/Evidence/Executor roles, composition/check operations and policy/acceptance constraints. It preserves the historical V2 judgment and explains that relocating rules into stages is useful organization, not a new derivation or proof of compliance.
+A standalone checkout skips only the source-parity check (`../claude_condensation` absent), never the artifact test.

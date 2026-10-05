@@ -4,14 +4,22 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const PACKAGE_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-export const METADATA_PATH = ".bridgecode/installation.json";
-export const SCHEMA_VERSION = 2;
-export const HOOK_PATH = ".codex/hooks/bridgecode-turn.mjs";
+export const PAYLOAD_DIR = "payload";
+export const METADATA_PATH = ".bridgecode/claude-installation.json";
+export const SCHEMA_VERSION = 1;
+export const EDITION = "claude-code";
+export const CORE_PATH = ".claude/bridgecode/CORE.md";
+export const HOOK_PATH = ".claude/hooks/bridgecode-turn.mjs";
+export const REVIEWER_PATH = ".claude/agents/bridgecode-reviewer.md";
 export const SPECIALISTS = ["best-agent", "taste", "design", "writing", "copywriting", "monoprompting"];
-export const PAYLOAD_PATHS = ["AGENTS.md", "README_HUMAN.txt", ...SPECIALISTS.map(n => `bridgecode/${n}.md`)];
+export const PAYLOAD_PATHS = [CORE_PATH, ".claude/bridgecode/README_HUMAN.txt", ...SPECIALISTS.map(n => `.claude/bridgecode/${n}.md`), REVIEWER_PATH];
 export const sha256 = value => createHash("sha256").update(value).digest("hex");
 export const toPosixPath = value => value.split(path.sep).join("/");
 
+// Installed payload may only land in the edition's own Claude Code locations.
+export function isAllowedPayloadPath(p) {
+  return /^\.claude\/bridgecode\/[A-Za-z0-9_.-]+$/.test(p) || /^\.claude\/agents\/bridgecode-[a-z0-9-]+\.md$/.test(p);
+}
 export function validateRelativePath(value, label = "path") {
   if (typeof value !== "string" || !value || /[\x00-\x1f]/.test(value)) throw new Error(`Unsafe ${label}`);
   const p = value.replaceAll("\\", "/");
@@ -61,11 +69,10 @@ export async function loadPackageContext(packageRoot = PACKAGE_ROOT) {
   const root = await assertProjectDirectory(packageRoot);
   const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
   const manifest = JSON.parse(await readFile(path.join(root, "payload-manifest.json"), "utf8"));
-  if (packageJson.name !== "@bridgecode/cli" || manifest.package !== packageJson.name || manifest.version !== packageJson.version || manifest.schemaVersion !== SCHEMA_VERSION) throw new Error("Payload manifest identity/version/schema mismatch");
+  if (typeof packageJson.name !== "string" || manifest.package !== packageJson.name || manifest.edition !== EDITION || manifest.version !== packageJson.version || manifest.schemaVersion !== SCHEMA_VERSION) throw new Error("Payload manifest identity/edition/version/schema mismatch");
   assertHashMap(manifest.files, "manifest path");
   for (const p of PAYLOAD_PATHS) if (!Object.hasOwn(manifest.files,p)) throw new Error(`Required payload absent: ${p}`);
-  // Future payloads may add ordinary paths; repository ownership is checked separately.
-  for (const p of Object.keys(manifest.files)) if (/^(?:\.git|\.agents|\.codex|\.bridgecode|agentic)(?:\/|$)/i.test(p)) throw new Error(`Reserved payload path: ${p}`);
+  for (const p of Object.keys(manifest.files)) if (!isAllowedPayloadPath(p)) throw new Error(`Reserved payload path: ${p}`);
   await verifyPayload(root, manifest);
   const hook = await readFile(path.join(root, "hooks/bridgecode-turn.mjs"));
   if (sha256(hook) !== manifest.hookHash) throw new Error("Hook payload checksum mismatch");
@@ -73,17 +80,13 @@ export async function loadPackageContext(packageRoot = PACKAGE_ROOT) {
 }
 export async function verifyPayload(root, manifest) {
   assertHashMap(manifest.files, "manifest path");
+  const payloadRoot = path.join(root, PAYLOAD_DIR);
   for (const [p,h] of Object.entries(manifest.files)) {
-    const bytes = await readOptional(root,p);
+    const bytes = await readOptional(payloadRoot,p);
     if (!bytes || sha256(bytes) !== h) throw new Error(`Payload checksum mismatch: ${p}`);
   }
 }
 export async function readPayloadFile(context,p) {
   if (!Object.hasOwn(context.manifest.files,p)) throw new Error(`Unmanaged payload: ${p}`);
-  return readFile(await safeTarget(context.packageRoot,p));
-}
-export async function legacyContext(packageRoot = PACKAGE_ROOT, version = "4.1.0") {
-  if(!/^\d+\.\d+\.\d+$/.test(version))throw new Error("Invalid legacy version");
-  const old = JSON.parse(await readFile(path.join(packageRoot,"legacy",version+".json"),"utf8"));
-  return { ...old, hashes: Object.fromEntries(Object.entries(old.files).map(([p,s]) => [p,sha256(Buffer.from(s))])) };
+  return readFile(await safeTarget(path.join(context.packageRoot, PAYLOAD_DIR),p));
 }

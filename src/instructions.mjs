@@ -1,9 +1,13 @@
-import { sha256, validateRelativePath } from "./manifest.mjs";
+import path from "node:path";
+import { sha256, validateRelativePath, CORE_PATH, PAYLOAD_PATHS, METADATA_PATH, HOOK_PATH } from "./manifest.mjs";
+import { HOOK_CONFIG } from "./hooks.mjs";
+import { JOURNAL } from "./transaction.mjs";
 
-export const BOOTSTRAP_END = "<!-- bridgecode:bootstrap:end -->";
+export const BOOTSTRAP_END = "<!-- bridgecode-claude:bootstrap:end -->";
+const MARKER = "bridgecode-claude:bootstrap:";
 
 function startPattern() {
-  return /<!-- bridgecode:bootstrap:start version="([^"]+)" schema="([^"]+)" -->/g;
+  return /<!-- bridgecode-claude:bootstrap:start version="([^"]+)" schema="([^"]+)" -->/g;
 }
 
 function findAll(text, needle) {
@@ -16,50 +20,39 @@ function findAll(text, needle) {
   return result;
 }
 
-export function buildLegacyBootstrap(version, eol = "\n") {
+export function buildBootstrap(version, eol = "\n", target = "CLAUDE.md") {
   return [
-    `<!-- bridgecode:bootstrap:start version="${version}" schema="1" -->`,
-    "At the beginning of every new task/session, read the root AGENTS.md completely before substantive work. Follow its Bridgecode processflow router and load the general, selected processflow, and specialist files it requires. Treat AGENTS.md as the canonical source of Bridgecode and repository-specific rules.",
-    "After Bridgecode is installed or updated, start a fresh task/session so the harness discovers the new root AGENTS.md.",
+    `<!-- bridgecode-claude:bootstrap:start version="${version}" schema="1" -->`,
+    "@" + path.posix.relative(path.posix.dirname(target), CORE_PATH),
+    `Bridgecode ${version} (Claude Code edition) is imported above. Apply it within the host hierarchy and the current user scope. Read triggered .claude/bridgecode/ specialists before their governed actions, resume active work from agentic/analysis.md, and locate code through agentic/architecture.md.`,
+    "After installing or updating Bridgecode, start a fresh Claude Code session.",
     BOOTSTRAP_END,
   ].join(eol);
 }
 
-export function buildBootstrap(version, eol = "\n") {
-  return [
-    `<!-- bridgecode:bootstrap:start version="${version}" schema="2" -->`,
-    "Read the complete root AGENTS.md at each new task and after lost context. Apply its Bridgecode policy and load each triggered specialist before its governed action. Use agentic/architecture.md to locate current code and agentic/analysis.md to recover active work. These instructions remain within the host hierarchy and current user scope.",
-    "After installing or updating Bridgecode, start a fresh task/session.",
-    BOOTSTRAP_END,
-  ].join(eol);
+// The Codex edition registers its own bootstrap; it is detected, never edited.
+export function hasCodexBootstrap(text) {
+  return text.includes("bridgecode:bootstrap:start");
 }
 
 export function parseBootstrap(text) {
   const starts = [...text.matchAll(startPattern())];
   const ends = findAll(text, BOOTSTRAP_END);
-  const hasMarker = text.includes("bridgecode:bootstrap:");
-  if (starts.length === 0 && ends.length === 0 && !hasMarker) return null;
-  if (starts.length !== 1 || ends.length !== 1 || findAll(text, "bridgecode:bootstrap:start").length !== 1 || findAll(text, "bridgecode:bootstrap:end").length !== 1) {
+  if (starts.length === 0 && ends.length === 0 && !text.includes(MARKER)) return null;
+  if (starts.length !== 1 || ends.length !== 1 || findAll(text, MARKER + "start").length !== 1 || findAll(text, MARKER + "end").length !== 1) {
     throw new Error("Bridgecode bootstrap markers are missing, duplicated, or malformed");
   }
   const start = starts[0].index;
   const end = ends[0] + BOOTSTRAP_END.length;
   if (end <= start) throw new Error("Bridgecode bootstrap marker order is malformed");
   const block = text.slice(start, end);
-  return {
-    start,
-    end,
-    version: starts[0][1],
-    schema: Number(starts[0][2]),
-    block,
-    hash: sha256(block),
-  };
+  return { start, end, version: starts[0][1], schema: Number(starts[0][2]), block, hash: sha256(block) };
 }
 
-export function upsertBootstrap(existingText, version) {
+export function upsertBootstrap(existingText, version, target) {
   const parsed = parseBootstrap(existingText);
   const eol = existingText.includes("\r\n") ? "\r\n" : "\n";
-  const block = buildBootstrap(version, eol);
+  const block = buildBootstrap(version, eol, target);
   if (parsed) {
     return { text: `${existingText.slice(0, parsed.start)}${block}${existingText.slice(parsed.end)}`, block };
   }
@@ -80,23 +73,38 @@ export function removeBootstrap(existingText) {
   return `${existingText.slice(0, start)}${existingText.slice(end)}`;
 }
 
-export function selectInstructionPaths({ mode, customPaths, existingClaude, previousPaths }) {
+const RESERVED = [...PAYLOAD_PATHS, METADATA_PATH, JOURNAL, HOOK_PATH, HOOK_CONFIG, ".claude/settings.local.json", "AGENTS.md"].map(p => p.toLowerCase());
+export function validateInstructionPath(value) {
+  const p = validateRelativePath(value, "instruction path");
+  const lower = p.toLowerCase();
+  if (path.posix.basename(p) !== "CLAUDE.md") throw new Error("Instruction bootstrap must target a CLAUDE.md file: " + p);
+  if (RESERVED.includes(lower) || /^(?:\.git|\.codex|\.agents|\.bridgecode|bridgecode|agentic)(?:\/|$)/i.test(p) || (/^\.claude\//i.test(p) && p !== ".claude/CLAUDE.md")) {
+    throw new Error("Instruction bootstrap overlaps reserved path: " + p);
+  }
+  return p;
+}
+
+// Claude Code loads CLAUDE.md and .claude/CLAUDE.md from the launch directory and its
+// ancestors, so a bootstrap is eager only for sessions started inside its scope.
+export function bootstrapScope(p) {
+  let dir = path.posix.dirname(p);
+  if (path.posix.basename(dir) === ".claude") dir = path.posix.dirname(dir);
+  return dir;
+}
+export const isRootInstructionPath = p => bootstrapScope(p) === ".";
+
+export function selectInstructionPaths({ mode, customPaths, previousPaths }) {
   const selected = new Set();
-  if (mode === "claude" || mode === "both" || (mode === "auto" && existingClaude)) {
-    selected.add("CLAUDE.md");
-  }
-  if (mode === undefined && previousPaths) {
-    for (const item of previousPaths) selected.add(validateRelativePath(item, "instruction path"));
-  }
-  for (const item of customPaths ?? []) {
-    selected.add(validateRelativePath(item, "instruction path"));
-  }
-  return [...selected].sort();
+  if (mode === undefined) for (const item of previousPaths ?? []) selected.add(item);
+  else if (mode === "claude") selected.add("CLAUDE.md");
+  for (const item of customPaths ?? []) selected.add(item);
+  const paths = [...selected].map(validateInstructionPath).sort();
+  if (new Set(paths.map(p => p.toLowerCase())).size !== paths.length) throw new Error("Instruction paths alias each other");
+  return paths;
 }
 
 export function assertInstructionMode(mode) {
-  const allowed = new Set(["auto", "agents", "claude", "both", "none"]);
-  if (!allowed.has(mode)) {
-    throw new Error(`Invalid --instruction-files value: ${mode}`);
+  if (mode !== "claude" && mode !== "none") {
+    throw new Error(`Invalid --instruction-files value: ${mode} (use claude or none)`);
   }
 }

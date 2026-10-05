@@ -3,7 +3,7 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { readOptional, safeTarget, sha256 } from "./manifest.mjs";
 
-export const JOURNAL = ".bridgecode/transaction.json";
+export const JOURNAL = ".bridgecode/claude-transaction.json";
 async function replace(root,p,bytes) {
   const target=await safeTarget(root,p);
   if(bytes===null){await rm(target,{force:true});return;}

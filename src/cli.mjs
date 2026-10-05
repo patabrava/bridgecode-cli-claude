@@ -1,26 +1,27 @@
 import { doctorBridgecode } from "./doctor.mjs";
 import { formatLifecycleSummary, installBridgecode } from "./install.mjs";
-import { PACKAGE_ROOT } from "./manifest.mjs";
+import { PACKAGE_ROOT, assertProjectDirectory } from "./manifest.mjs";
 import { updateBridgecode } from "./update.mjs";
 import { recoverTransaction } from "./transaction.mjs";
-import { assertProjectDirectory } from "./manifest.mjs";
 
-const HELP = `Bridgecode CLI
+const HELP = `Bridgecode CLI — Claude Code edition
 
 Usage:
-  bridgecode install [--project <path>] [--dry-run]
-  bridgecode update [--project <path>] [--dry-run]
-  bridgecode doctor [--project <path>]
-  bridgecode recover [--project <path>]
-  --hooks | --no-hooks   Configure project-local Codex heartbeat/recovery
-  --json                Return structured results
+  bridgecode-claude install [--project <path>] [--dry-run]
+  bridgecode-claude update  [--project <path>] [--dry-run]
+  bridgecode-claude doctor  [--project <path>]
+  bridgecode-claude recover [--project <path>]
+  --hooks | --no-hooks    Register Claude Code heartbeat/compaction hooks in .claude/settings.json (default: on)
+  --json                  Return structured results
 
 Instruction registration:
-  --instruction-files auto|agents|claude|both|none
-  --instruction-file <safe-relative-custom-path>  (repeatable)
+  --instruction-files claude|none          claude (default): bootstrap block in root CLAUDE.md
+  --instruction-file <path/to/CLAUDE.md>   additional CLAUDE.md bootstrap (repeatable)
 
-Bridgecode always installs the canonical complete root AGENTS.md. Other instruction
-files receive only a bounded bootstrap that points back to root AGENTS.md.
+The core and specialists are installed under .claude/bridgecode/ and imported from
+CLAUDE.md. This edition coexists with the Codex edition (@bridgecode/cli): it never
+writes AGENTS.md, bridgecode/, .codex/ or the Codex installation metadata, and both
+editions share agentic/ memory.
 `;
 
 export function parseArguments(argv) {

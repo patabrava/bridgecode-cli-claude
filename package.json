@@ -1,26 +1,23 @@
 {
-  "name": "@bridgecode/cli",
+  "name": "@bridgecode/cli-claude",
   "version": "4.3.2",
-  "description": "Install, update, and verify Bridgecode repo-local instructions.",
+  "description": "Install, update, and verify Bridgecode repo-local instructions for Claude Code (Claude Code edition).",
   "type": "module",
   "bin": {
-    "bridgecode": "bin/bridgecode.mjs"
+    "bridgecode-claude": "bin/bridgecode-claude.mjs"
   },
   "engines": {
     "node": ">=22"
   },
   "files": [
-    "AGENTS.md",
     "README.md",
-    "README_HUMAN.txt",
     "CHANGELOG.md",
     "LICENSE",
     "payload-manifest.json",
     "bin/",
     "src/",
-    "bridgecode/",
-    "hooks/",
-    "legacy/"
+    "payload/",
+    "hooks/"
   ],
   "scripts": {
     "build:manifest": "node scripts/build-manifest.mjs",
@@ -31,8 +28,10 @@
     "test:release": "node scripts/test-release.mjs"
   },
   "keywords": [
-    "codex",
-    "agents.md",
+    "claude-code",
+    "claude",
+    "CLAUDE.md",
+    "bridgecode",
     "agent",
     "instructions",
     "cli"

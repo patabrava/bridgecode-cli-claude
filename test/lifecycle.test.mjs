@@ -1,67 +1,88 @@
 import assert from "node:assert/strict";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, access } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { inspectInstallation } from "../src/doctor.mjs";
 import { installBridgecode } from "../src/install.mjs";
 import { parseBootstrap } from "../src/instructions.mjs";
-import { parseManagedAgents, buildLegacyAgents, splitCanonicalAgents, pendingRulesBlock, parseRules } from "../src/repo-rules.mjs";
-import { sha256 } from "../src/manifest.mjs";
+import { CORE_PATH, HOOK_PATH, PAYLOAD_DIR } from "../src/manifest.mjs";
 import { updateBridgecode } from "../src/update.mjs";
-import { fixture, PACKAGE_ROOT, simulatedPackage, snapshot, legacyFiles, MANAGED_PATHS, packageSnapshot } from "./helpers.mjs";
+import { fixture, PACKAGE_ROOT, simulatedPackage, snapshot, MANAGED_PATHS, codexInstall, codexSnapshot } from "./helpers.mjs";
 const options=root=>({project:root,packageRoot:PACKAGE_ROOT});
+const exists=p=>access(p).then(()=>true,()=>false);
 test("install, doctor, true no-op update and projected dry-run",async t=>{
  const root=await fixture(t);const before=await snapshot(root);
  const dry=await installBridgecode({...options(root),dryRun:true});
  assert.ok(dry.changes.length);assert.deepEqual(await snapshot(root),before);
- assert.equal((await installBridgecode(options(root))).verified,true);
+ const out=await installBridgecode(options(root));
+ assert.equal(out.verified,true);assert.equal(out.edition,"claude-code");assert.equal(out.coreAutoloaded,true);assert.equal(out.codexDetected,false);
+ for(const p of [...MANAGED_PATHS,HOOK_PATH])assert.deepEqual(await readFile(path.join(root,p)),await readFile(path.join(PACKAGE_ROOT,p===HOOK_PATH?"hooks/bridgecode-turn.mjs":path.join(PAYLOAD_DIR,p))),p);
+ assert.equal(await exists(path.join(root,"AGENTS.md")),false,"never creates AGENTS.md");
  const installed=await snapshot(root);
  assert.equal((await updateBridgecode(options(root))).changes.length,0);
  assert.deepEqual(await snapshot(root),installed);
  assert.equal((await inspectInstallation(options(root))).ok,true);
 });
-test("unrelated instructions and custom bootstraps preserve outside bytes",async t=>{
+test("CLAUDE.md user content is preserved and the bootstrap imports the core",async t=>{
  const root=await fixture(t);const text="# Existing\r\n\r\nKeep π and spacing.  \r\n";
- await writeFile(path.join(root,"AGENTS.md"),text);
  await writeFile(path.join(root,"CLAUDE.md"),text);
- await installBridgecode({...options(root),instructionFiles:"both",instructionFile:["docs/HARNESS.md"]});
- const agents=await readFile(path.join(root,"AGENTS.md"),"utf8");
- assert.equal(parseManagedAgents(agents).start,0);assert.ok(agents.endsWith(text));
- for(const p of ["CLAUDE.md","docs/HARNESS.md"])assert.ok(parseBootstrap(await readFile(path.join(root,p),"utf8")));
+ await installBridgecode(options(root));
+ const claude=await readFile(path.join(root,"CLAUDE.md"),"utf8");
+ assert.ok(claude.startsWith(text));
+ const block=parseBootstrap(claude).block;
+ assert.ok(block.includes("\r\n@.claude/bridgecode/CORE.md\r\n"),"CRLF preserved and root import path");
  await updateBridgecode(options(root));
  assert.ok((await readFile(path.join(root,"CLAUDE.md"),"utf8")).startsWith(text));
 });
-test("current unmarked source adopts without pending rules",async t=>{
+test("custom .claude/CLAUDE.md imports the core relative to its own directory",async t=>{
  const root=await fixture(t);
- for(const p of MANAGED_PATHS){await mkdir(path.dirname(path.join(root,p)),{recursive:true});await writeFile(path.join(root,p),await readFile(path.join(PACKAGE_ROOT,p)));}
- const out=await installBridgecode(options(root));assert.equal(out.migrationPending,false);
+ await installBridgecode({...options(root),instructionFile:[".claude/CLAUDE.md"]});
+ const custom=parseBootstrap(await readFile(path.join(root,".claude/CLAUDE.md"),"utf8")).block;
+ assert.ok(custom.split("\n").includes("@bridgecode/CORE.md"));
+ assert.ok(parseBootstrap(await readFile(path.join(root,"CLAUDE.md"),"utf8")).block.includes("@"+CORE_PATH));
+ assert.equal((await inspectInstallation(options(root))).ok,true);
+ assert.equal((await updateBridgecode(options(root))).changes.length,0);
 });
-for(const marked of [false,true])test("4.1 "+(marked?"managed":"unmarked")+" migration preserves mixed-EOL Unicode rules and retires old files",async t=>{
- const root=await fixture(t),files=await legacyFiles();
- const rules="- Prevention before architecture is preserved.\r\n- Architecture: café → 東京\n  - nested \u{1F680}\r\n  ```text\n  <!-- harmless -->\r\n  ```";
- const canonical=files["AGENTS.md"];
- const agents=marked?buildLegacyAgents(canonical,"4.1.0",rules):splitCanonicalAgents(canonical).prefix+rules+"\n";
- await writeFile(path.join(root,"AGENTS.md"),agents);
- for(const [p,s]of Object.entries(files)){if(p==="AGENTS.md")continue;await mkdir(path.dirname(path.join(root,p)),{recursive:true});await writeFile(path.join(root,p),s);}
- if(marked){
-  await mkdir(path.join(root,".bridgecode"));
-  const managedFiles=Object.fromEntries(Object.entries(files).filter(([p])=>p!=="AGENTS.md").map(([p,s])=>[p,sha256(s)]));
-  await writeFile(path.join(root,".bridgecode/installation.json"),JSON.stringify({package:"@bridgecode/cli",version:"4.1.0",schemaVersion:1,managedFiles,agents:{path:"AGENTS.md",managedHash:parseManagedAgents(agents).managedHash},instructionMode:"auto",instructionFiles:[],bootstraps:{}}));
- }
- const out=await installBridgecode(options(root));assert.equal(out.migrationPending,true);
- let parsed=parseManagedAgents(await readFile(path.join(root,"AGENTS.md"),"utf8"));
- assert.equal(parsed.rules,"");assert.equal(parsed.schema,2);
- const memory=await readFile(path.join(root,"agentic/architecture.md"),"utf8");
- assert.ok(memory.includes(rules));assert.match(memory,/remain binding/);
- assert.equal((await snapshot(root))["bridgecode/general-functions.md"],undefined);
+test("coexists with a Codex edition: Codex files stay byte-identical",async t=>{
+ const root=await fixture(t);await codexInstall(root);
+ const codexBootstrap='<!-- bridgecode:bootstrap:start version="4.3.2" schema="2" -->\nRead the complete root AGENTS.md.\n<!-- bridgecode:bootstrap:end -->';
+ const userClaude="# Team notes\n"+codexBootstrap+"\n";
+ await writeFile(path.join(root,"CLAUDE.md"),userClaude);
+ await writeFile(path.join(root,".bridgecode/installation.json"),JSON.stringify({package:"@bridgecode/cli",version:"4.3.2",schemaVersion:2,instructionFiles:["CLAUDE.md","GEMINI.md"]})+"\n");
+ const codex=await codexSnapshot(root);
+ const out=await installBridgecode(options(root));
+ assert.equal(out.codexDetected,true);assert.equal(out.codexBootstrapInClaude,true);
+ assert.equal(out.codexRemovalCommand,'npx -y @bridgecode/cli@4.3.2 update --project . --instruction-files agents --instruction-file "GEMINI.md"',"re-lists the Codex edition's other bootstraps, drops CLAUDE.md");
+ const claude=await readFile(path.join(root,"CLAUDE.md"),"utf8");
+ assert.ok(claude.startsWith(userClaude),"Codex bootstrap untouched");
+ assert.ok(parseBootstrap(claude));
+ assert.deepEqual(await codexSnapshot(root),codex);
+ await updateBridgecode(options(root));
+ await updateBridgecode({...options(root),hooks:false});
+ const report=await inspectInstallation(options(root));
+ assert.equal(report.ok,true);
+ assert.ok(report.warnings.some(w=>/Codex edition installation detected/.test(w)));
+ assert.ok(report.warnings.some(w=>/Codex edition bootstrap/.test(w)&&w.includes(out.codexRemovalCommand)));
+ assert.deepEqual(await codexSnapshot(root),codex);
+});
+test("agentic memory is never written by install or update",async t=>{
+ const root=await fixture(t);await mkdir(path.join(root,"agentic"));
+ const architecture="# Architecture\r\nVerified ownership → src/main.mjs\r\n## Imported repository constraints — verification pending\n- Keep\n",analysis="Another active task\n";
+ await writeFile(path.join(root,"agentic/architecture.md"),architecture);await writeFile(path.join(root,"agentic/analysis.md"),analysis);
+ await installBridgecode(options(root));
+ await updateBridgecode({project:root,packageRoot:await simulatedPackage(t)});
+ assert.equal(await readFile(path.join(root,"agentic/architecture.md"),"utf8"),architecture);
+ assert.equal(await readFile(path.join(root,"agentic/analysis.md"),"utf8"),analysis);
+});
+test("next release updates from its trusted snapshot and verifies",async t=>{
+ const root=await fixture(t);await installBridgecode(options(root));
  const pkg=await simulatedPackage(t);
  await updateBridgecode({project:root,packageRoot:pkg});
- parsed=parseManagedAgents(await readFile(path.join(root,"AGENTS.md"),"utf8"));
- assert.equal(parsed.rules,"");assert.equal(parsed.version,"4.3.3");
- assert.equal(await readFile(path.join(root,"agentic/architecture.md"),"utf8"),memory);
- // Reconciliation is repository-owned: deleting one resolved rule does not invalidate the core.
- await writeFile(path.join(root,"agentic/architecture.md"),memory.replace(rules,"- Remaining unresolved rule"));
- assert.equal((await inspectInstallation({project:root,packageRoot:pkg})).ok,true);
+ assert.match(await readFile(path.join(root,".claude/bridgecode/writing.md"),"utf8"),/Simulation 4\.3\.3/);
+ assert.match(await readFile(path.join(root,"CLAUDE.md"),"utf8"),/version="4\.3\.3"/);
+ const report=await inspectInstallation({project:root,packageRoot:pkg});
+ assert.equal(report.ok,true);assert.equal(report.version,"4.3.3");
+ assert.equal((await updateBridgecode({project:root,packageRoot:pkg})).changes.length,0);
 });
 test("next-release failure restores all original bytes",async t=>{
  const root=await fixture(t);await installBridgecode(options(root));const before=await snapshot(root);
@@ -69,97 +90,47 @@ test("next-release failure restores all original bytes",async t=>{
  await assert.rejects(updateBridgecode({project:root,packageRoot:pkg,transactionFailAfterWrites:2}),/rolled back.*Simulated interruption/s);
  assert.deepEqual(await snapshot(root),before);
 });
-test("architecture and other project memory are never replaced by an update",async t=>{
- const root=await fixture(t);await installBridgecode(options(root));await mkdir(path.join(root,"agentic"));
- const architecture="# Architecture\r\nVerified ownership → src/main.mjs\r\n",analysis="Another active task\n";
- await writeFile(path.join(root,"agentic/architecture.md"),architecture);await writeFile(path.join(root,"agentic/analysis.md"),analysis);
- await updateBridgecode({project:root,packageRoot:await simulatedPackage(t)});
- assert.equal(await readFile(path.join(root,"agentic/architecture.md"),"utf8"),architecture);
- assert.equal(await readFile(path.join(root,"agentic/analysis.md"),"utf8"),analysis);
-});
-test("hook configuration preserves unrelated hooks and supports disabling",async t=>{
- const root=await fixture(t);await mkdir(path.join(root,".codex"));
+test("settings.json keeps unrelated keys, events and entries; disabling removes only Bridgecode entries",async t=>{
+ const root=await fixture(t);await mkdir(path.join(root,".claude"));
  const custom={hooks:[{type:"command",command:"echo custom"}]};
- await writeFile(path.join(root,".codex/hooks.json"),JSON.stringify({customKey:true,hooks:{UserPromptSubmit:[custom]}}));
+ const stop={hooks:[{type:"command",command:"echo stop"}]};
+ const settings={permissions:{allow:["Bash(npm test)"]},env:{A:"1"},hooks:{UserPromptSubmit:[custom],Stop:[stop]}};
+ await writeFile(path.join(root,".claude/settings.json"),JSON.stringify(settings));
  await installBridgecode(options(root));
- let c=JSON.parse(await readFile(path.join(root,".codex/hooks.json")));
- assert.deepEqual(c.hooks.UserPromptSubmit[0],custom);assert.equal(c.customKey,true);
+ let c=JSON.parse(await readFile(path.join(root,".claude/settings.json")));
+ assert.deepEqual(c.permissions,settings.permissions);assert.deepEqual(c.env,settings.env);assert.deepEqual(c.hooks.Stop,[stop]);
+ assert.deepEqual(c.hooks.UserPromptSubmit[0],custom);assert.equal(c.hooks.UserPromptSubmit.length,2);
+ assert.equal(c.hooks.SessionStart[0].matcher,"compact");
+ assert.ok(c.hooks.SessionStart[0].hooks[0].command.includes("$CLAUDE_PROJECT_DIR/.claude/hooks/bridgecode-turn.mjs"));
  await updateBridgecode({...options(root),hooks:false});
- c=JSON.parse(await readFile(path.join(root,".codex/hooks.json")));
- assert.deepEqual(c.hooks.UserPromptSubmit,[custom]);
+ c=JSON.parse(await readFile(path.join(root,".claude/settings.json")));
+ assert.deepEqual(c,{permissions:settings.permissions,env:settings.env,hooks:{UserPromptSubmit:[custom],Stop:[stop]}});
+ assert.equal(await exists(path.join(root,HOOK_PATH)),false,"retired hook script removed");
+ assert.equal((await inspectInstallation(options(root))).ok,true);
+ await updateBridgecode({...options(root),hooks:true});
  assert.equal((await inspectInstallation(options(root))).ok,true);
 });
-for(const previousVersion of ["4.3.0","4.3.1"])for(const existingMemory of [false,true])test(previousVersion+" rule transfer: dry-run, rollback, ordering, hooks and idempotence; existing memory="+existingMemory,async t=>{
- const root=await fixture(t),oldPackage=await packageSnapshot(t,previousVersion);
- await installBridgecode({project:root,packageRoot:oldPackage,instructionFiles:"both"});
- const original=await readFile(path.join(root,"AGENTS.md"),"utf8");
- const prefix="# Local instructions\r\nKeep this prefix.  \r\n",suffix="\n## Other instructions\nKeep this suffix.\n";
- const rules="- Preserve café → 東京.\r\n- Unresolved: enforce boundary X.\n";
- await writeFile(path.join(root,"AGENTS.md"),prefix+original+pendingRulesBlock(rules)+suffix);
- const architecture="# Existing architecture\r\nVerified map remains.  \r\n";
- if(existingMemory){await mkdir(path.join(root,"agentic"));await writeFile(path.join(root,"agentic/architecture.md"),architecture);}
- const before=await snapshot(root);
- const dry=await updateBridgecode({...options(root),dryRun:true});
- assert.ok(dry.changes.some(c=>c.path==="agentic/architecture.md"));assert.deepEqual(await snapshot(root),before);
- await assert.rejects(updateBridgecode({...options(root),transactionFailAfterWrites:2}),/rolled back/);
- assert.deepEqual(await snapshot(root),before,"both AGENTS and architecture restored");
- const result=await updateBridgecode(options(root));assert.equal(result.migrationPending,true);
- const agents=await readFile(path.join(root,"AGENTS.md"),"utf8"),memory=await readFile(path.join(root,"agentic/architecture.md"),"utf8");
- assert.equal(parseManagedAgents(agents).start,0);assert.equal(parseRules(agents),null);
- assert.ok(agents.includes(prefix)&&agents.includes(suffix));assert.ok(agents.indexOf(prefix)<agents.indexOf(suffix));
- assert.ok(!agents.includes("memory migration is incomplete"));
- assert.ok(memory.includes(rules));assert.match(memory,/remain binding.*implementation status is unverified/s);
- if(existingMemory)assert.ok(memory.startsWith(architecture));
- const after=await snapshot(root);assert.equal((await updateBridgecode(options(root))).changes.length,0);assert.deepEqual(await snapshot(root),after);
+test("--instruction-files none removes the bootstrap; empty files are removed, user content kept",async t=>{
+ const root=await fixture(t),user="# Mine\n";
+ await installBridgecode({...options(root),instructionFile:[".claude/CLAUDE.md"]});
+ await writeFile(path.join(root,".claude/CLAUDE.md"),user+(await readFile(path.join(root,".claude/CLAUDE.md"),"utf8")));
+ // The user edit sits outside the managed block, so ownership remains intact.
  assert.equal((await inspectInstallation(options(root))).ok,true);
+ const out=await updateBridgecode({...options(root),instructionFiles:"none"});
+ assert.equal(out.coreAutoloaded,false);
+ assert.equal(await exists(path.join(root,"CLAUDE.md")),false);
+ assert.equal(await readFile(path.join(root,".claude/CLAUDE.md"),"utf8"),user.trimEnd(),"block and its separating newlines removed");
+ const report=await inspectInstallation(options(root));
+ assert.equal(report.ok,true);assert.ok(report.warnings.some(w=>w.includes("will not load the core automatically")));
 });
-test("plain repo-rule sections migrate while unrelated blocks and fenced examples remain",async t=>{
- const root=await fixture(t);
- const before="# Local\nKeep.\n\n~~~md\n## Repo rules\nExample only.\n~~~\n";
- const rules="## Repo rules\n- Real constraint.\n### Detail\nKeep details.\n";
- const after="## Deployment\nKeep deployment.\n";
- await writeFile(path.join(root,"AGENTS.md"),before+rules+after);
- await installBridgecode(options(root));
- const agents=await readFile(path.join(root,"AGENTS.md"),"utf8"),memory=await readFile(path.join(root,"agentic/architecture.md"),"utf8");
- assert.ok(agents.includes(before)&&agents.includes(after));assert.ok(!agents.includes("Real constraint"));
- assert.ok(memory.includes(rules));assert.ok(!memory.includes("Example only"));
- assert.equal((await updateBridgecode(options(root))).changes.length,0);
-});
-for(const previousVersion of ["4.3.0","4.3.1"])test("unmarked canonical "+previousVersion+" core with surrounding instructions upgrades safely",async t=>{
- const root=await fixture(t),old=JSON.parse(await readFile(path.join(PACKAGE_ROOT,"legacy/"+previousVersion+".json"),"utf8"));
- for(const [p,s]of Object.entries(old.files)){await mkdir(path.dirname(path.join(root,p)),{recursive:true});await writeFile(path.join(root,p),s);}
- const prefix="# Local prefix\r\nKeep first.\r\n",suffix="\n## Repo rules\n- Keep data safe.\n## Custom\nKeep last.\n";
- await writeFile(path.join(root,"AGENTS.md"),prefix+old.files["AGENTS.md"].replaceAll("\r\n","\n").replaceAll("\n","\r\n")+suffix);
- await updateBridgecode(options(root));
- const agents=await readFile(path.join(root,"AGENTS.md"),"utf8");
- assert.equal(parseManagedAgents(agents).start,0);assert.ok(agents.includes(prefix));assert.ok(agents.includes("## Custom\nKeep last."));
- assert.ok((await readFile(path.join(root,"agentic/architecture.md"),"utf8")).includes("- Keep data safe."));
- assert.equal((await updateBridgecode(options(root))).changes.length,0);
-});
-test("unmarked 4.1 preserves legacy plus external rules and peer sections through dry-run, rollback and update",async t=>{
- const root=await fixture(t),files=await legacyFiles();
- const rules="- Preserve repository behavior.\r\n~~~md\n## Example heading\n~~~\n### Rule detail\nKeep detail.\n";
- const outside="## Deployment\r\nKeep deployment.  \r\n\n# Team\nKeep team guidance.\n";
- const externalRule="- Separate marked constraint B.\r\n";
- const external="<!-- bridgecode:repo-rules:start -->\n"+externalRule+"\n<!-- bridgecode:repo-rules:end -->";
- await writeFile(path.join(root,"AGENTS.md"),splitCanonicalAgents(files["AGENTS.md"]).prefix+rules+"\n"+outside.replace("\n# Team",external+"\n# Team"));
- const before=await snapshot(root);
- await updateBridgecode({...options(root),dryRun:true});assert.deepEqual(await snapshot(root),before);
- await assert.rejects(updateBridgecode({...options(root),transactionFailAfterWrites:2}),/rolled back/);assert.deepEqual(await snapshot(root),before);
- await updateBridgecode(options(root));
- const agents=await readFile(path.join(root,"AGENTS.md"),"utf8"),memory=await readFile(path.join(root,"agentic/architecture.md"),"utf8");
- assert.ok(agents.endsWith(outside));assert.equal(parseManagedAgents(agents).start,0);
- assert.ok(memory.includes(rules));assert.ok(!memory.includes("Keep deployment"));
- assert.ok(memory.includes(externalRule));assert.equal(parseRules(agents),null);
- assert.equal((await updateBridgecode(options(root))).changes.length,0);
-});
-test("fresh install transfers external rule markers immediately and update is a no-op",async t=>{
- const root=await fixture(t),rules="- Constraint before any Bridgecode core.\r\n";
- const before="# Before\nKeep before.\n",after="\n## After\nKeep after.\n";
- const markers="<!-- bridgecode:repo-rules:start -->\n"+rules+"\n<!-- bridgecode:repo-rules:end -->";
- await writeFile(path.join(root,"AGENTS.md"),before+markers+after);
- await installBridgecode(options(root));
- const agents=await readFile(path.join(root,"AGENTS.md"),"utf8"),memory=await readFile(path.join(root,"agentic/architecture.md"),"utf8");
- assert.equal(parseRules(agents),null);assert.ok(agents.includes(before+after));assert.ok(memory.includes(rules));
- assert.equal((await updateBridgecode(options(root))).changes.length,0);
+test("only a root-scope bootstrap counts as autoloading the core",async t=>{
+ const nested=await fixture(t),dotClaude=await fixture(t);
+ const out=await installBridgecode({...options(nested),instructionFiles:"none",instructionFile:["app/CLAUDE.md"]});
+ assert.equal(out.coreAutoloaded,false);
+ assert.ok((await readFile(path.join(nested,"app/CLAUDE.md"),"utf8")).includes("@../.claude/bridgecode/CORE.md"));
+ assert.ok((await inspectInstallation(options(nested))).warnings.some(w=>w.includes("will not load the core automatically")));
+ const scoped=await installBridgecode({...options(dotClaude),instructionFiles:"none",instructionFile:[".claude/CLAUDE.md"]});
+ assert.equal(scoped.coreAutoloaded,true);
+ assert.ok((await readFile(path.join(dotClaude,".claude/CLAUDE.md"),"utf8")).includes("@bridgecode/CORE.md"));
+ assert.ok(!(await inspectInstallation(options(dotClaude))).warnings.some(w=>w.includes("will not load the core automatically")));
 });

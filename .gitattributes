@@ -1,6 +1,5 @@
-AGENTS.md -text
+payload/** -text
 README_HUMAN.txt -text
-bridgecode/** -text
 *.mjs text eol=lf
 *.json text eol=lf
 *.md text eol=lf

@@ -4,68 +4,64 @@ import path from "node:path";
 import test from "node:test";
 import { installBridgecode } from "../src/install.mjs";
 import { inspectInstallation } from "../src/doctor.mjs";
-import { loadPackageContext, sha256, validateRelativePath } from "../src/manifest.mjs";
-import { parseManagedAgents } from "../src/repo-rules.mjs";
+import { loadPackageContext, sha256, validateRelativePath, METADATA_PATH, CORE_PATH, REVIEWER_PATH, PAYLOAD_DIR } from "../src/manifest.mjs";
 import { buildBootstrap } from "../src/instructions.mjs";
 import { updateBridgecode } from "../src/update.mjs";
 import { applyTransaction, recoverTransaction, JOURNAL } from "../src/transaction.mjs";
-import { fixture, PACKAGE_ROOT, simulatedPackage, snapshot, legacyFiles } from "./helpers.mjs";
+import { fixture, PACKAGE_ROOT, simulatedPackage, snapshot } from "./helpers.mjs";
 const options=root=>({project:root,packageRoot:PACKAGE_ROOT});
 for(const unsafe of ["../escape","C:/x","aux.txt","foo./x","a//b","a:stream","a/../b"])
  test("unsafe path "+unsafe,()=>assert.throws(()=>validateRelativePath(unsafe)));
-for(const text of ['<!-- bridgecode:managed:start version="4.1.0" schema="1" -->\n','<!-- bridgecode:managed:end -->'])
- test("malformed markers fail before writes: "+text,async t=>{
- const root=await fixture(t);await writeFile(path.join(root,"AGENTS.md"),text);const before=await snapshot(root);
+for(const text of ['<!-- bridgecode-claude:bootstrap:start broken -->','<!-- bridgecode-claude:bootstrap:end -->'])
+ test("malformed bootstrap markers fail before writes: "+text,async t=>{
+ const root=await fixture(t);await writeFile(path.join(root,"CLAUDE.md"),"# Mine\n"+text+"\n");const before=await snapshot(root);
  await assert.rejects(installBridgecode(options(root)),/markers|malformed/);assert.deepEqual(await snapshot(root),before);
 });
-for(const kind of ["changed-file","missing-coverage","forged-core-hash","forged-file-hash"])
+test("additional malformed bootstrap markers make doctor and update fail without writes",async t=>{
+ const root=await fixture(t);await installBridgecode(options(root));
+ const p=path.join(root,"CLAUDE.md"),valid=await readFile(p,"utf8");
+ for(const suffix of ["<!-- bridgecode-claude:bootstrap:start broken -->","<!-- bridgecode-claude:bootstrap:end broken -->"]){
+  await writeFile(p,valid+"\n"+suffix);const before=await snapshot(root);
+  assert.equal((await inspectInstallation(options(root))).ok,false);
+  await assert.rejects(updateBridgecode(options(root)),/markers/);
+  assert.deepEqual(await snapshot(root),before);
+ }
+});
+for(const kind of ["changed-file","missing-coverage","forged-file-hash","forged-core-hash"])
  test("doctor and no-op update reject "+kind,async t=>{
  const root=await fixture(t);await installBridgecode(options(root));
- const p=path.join(root,".bridgecode/installation.json"),m=JSON.parse(await readFile(p));
- if(kind==="missing-coverage")delete m.managedFiles["bridgecode/writing.md"];
+ const p=path.join(root,METADATA_PATH),m=JSON.parse(await readFile(p));
+ if(kind==="missing-coverage")delete m.managedFiles[".claude/bridgecode/writing.md"];
  else if(kind==="forged-core-hash"){
- const a=path.join(root,"AGENTS.md"),s=(await readFile(a,"utf8")).replace("Operating contract","Tampered contract");
- await writeFile(a,s);m.agents.managedHash=parseManagedAgents(s).managedHash;
- }else{await writeFile(path.join(root,"bridgecode/writing.md"),"tampered");if(kind==="forged-file-hash")m.managedFiles["bridgecode/writing.md"]=sha256("tampered");}
+  const tampered=(await readFile(path.join(root,CORE_PATH),"utf8"))+"\nTampered contract\n";
+  await writeFile(path.join(root,CORE_PATH),tampered);m.managedFiles[CORE_PATH]=sha256(tampered);
+ }else{await writeFile(path.join(root,".claude/bridgecode/writing.md"),"tampered");if(kind==="forged-file-hash")m.managedFiles[".claude/bridgecode/writing.md"]=sha256("tampered");}
  await writeFile(p,JSON.stringify(m));const before=await snapshot(root);
  assert.equal((await inspectInstallation(options(root))).ok,false);
  await assert.rejects(updateBridgecode(options(root)));
  assert.deepEqual(await snapshot(root),before);
 });
-test("new payload collision and payload tampering make zero writes",async t=>{
- const root=await fixture(t);await mkdir(path.join(root,"bridgecode"));await writeFile(path.join(root,"bridgecode/writing.md"),"user owned");
+for(const owned of [CORE_PATH,REVIEWER_PATH])
+ test("unowned existing payload path is a conflict with zero writes: "+owned,async t=>{
+ const root=await fixture(t);await mkdir(path.dirname(path.join(root,owned)),{recursive:true});
+ await writeFile(path.join(root,owned),await readFile(path.join(PACKAGE_ROOT,PAYLOAD_DIR,owned)));
  const before=await snapshot(root);await assert.rejects(installBridgecode(options(root)),/conflicts/);assert.deepEqual(await snapshot(root),before);
- const pkg=await simulatedPackage(t);await writeFile(path.join(pkg,"README_HUMAN.txt"),"tampered");
- await assert.rejects(loadPackageContext(pkg),/checksum/);
 });
-test("symlink or junction escape is refused",async t=>{
+test("payload tampering and payload paths outside the allowlist are rejected",async t=>{
+ const pkg=await simulatedPackage(t);await writeFile(path.join(pkg,PAYLOAD_DIR,".claude/bridgecode/README_HUMAN.txt"),"tampered");
+ await assert.rejects(loadPackageContext(pkg),/checksum/);
+ for(const bad of [".git/config","src/x.md","AGENTS.md",".claude/settings.json",".claude/agents/other.md"]){
+  const fresh=await simulatedPackage(t),mp=path.join(fresh,"payload-manifest.json"),m=JSON.parse(await readFile(mp));
+  m.files[bad]=sha256("x");await writeFile(mp,JSON.stringify(m));
+  await assert.rejects(loadPackageContext(fresh),/Reserved payload/,bad);
+ }
+});
+test("symlinked .claude is refused and the outside stays untouched",async t=>{
  const root=await fixture(t),outside=await fixture(t);
- await symlink(outside,path.join(root,"bridgecode"),process.platform==="win32"?"junction":"dir");
+ await symlink(outside,path.join(root,".claude"),process.platform==="win32"?"junction":"dir");
  const before=await snapshot(outside);
  await assert.rejects(installBridgecode(options(root)),/symbolic|symlink|link/i);
  assert.deepEqual(await snapshot(outside),before);
-});
-test("large AGENTS dry-run succeeds without writes; traversal still fails",async t=>{
- const root=await fixture(t);await writeFile(path.join(root,"AGENTS.md"),"x".repeat(33000));const before=await snapshot(root);
- assert.equal((await installBridgecode({...options(root),dryRun:true})).dryRun,true);
- await assert.rejects(installBridgecode({...options(root),instructionFile:["../CLAUDE.md"]}),/Unsafe/);
- assert.deepEqual(await snapshot(root),before);
- await installBridgecode(options(root));
- assert.equal((await inspectInstallation(options(root))).ok,true);
- assert.equal((await updateBridgecode(options(root))).changes.length,0);
- assert.ok((await readFile(path.join(root,"AGENTS.md"),"utf8")).endsWith("x".repeat(33000)));
-});
-test("malformed external repo markers fail fresh installation without writes",async t=>{
- const root=await fixture(t);await writeFile(path.join(root,"AGENTS.md"),"# Local\n<!-- bridgecode:repo-rules:start -->\n- Keep this\n");
- const before=await snapshot(root);await assert.rejects(installBridgecode(options(root)),/markers/);assert.deepEqual(await snapshot(root),before);
-});
-test("linked architecture destination is refused without moving rules",async t=>{
- const root=await fixture(t),outside=await fixture(t);
- await writeFile(path.join(root,"AGENTS.md"),"## Repo rules\n- Keep safe\n");
- await symlink(outside,path.join(root,"agentic"),process.platform==="win32"?"junction":"dir");
- const before=await snapshot(root),external=await snapshot(outside);
- await assert.rejects(installBridgecode(options(root)),/symbolic|symlink|link/i);
- assert.deepEqual(await snapshot(root),before);assert.deepEqual(await snapshot(outside),external);
 });
 test("post-check failure rolls back; failed rollback keeps recoverable journal",async t=>{
  const root=await fixture(t);await writeFile(path.join(root,"owned"),"before");
@@ -83,65 +79,57 @@ test("precondition conflict refuses mutation",async t=>{
  await assert.rejects(applyTransaction(root,[{path:"owned",content:Buffer.from("after")}],{preconditions:{owned:sha256("old")}}),/Concurrent modification/);
  assert.equal(await readFile(path.join(root,"owned"),"utf8"),"now");
 });
-test("unowned bootstraps and case-aliased reserved targets are refused",async t=>{
- const root=await fixture(t);await writeFile(path.join(root,"CLAUDE.md"),buildBootstrap("4.3.0"));
+test("pending journal blocks install without writes",async t=>{
+ const root=await fixture(t);await mkdir(path.join(root,".bridgecode"));await writeFile(path.join(root,JOURNAL),"{}");
+ const before=await snapshot(root);
+ await assert.rejects(installBridgecode(options(root)),/Pending transaction/);assert.deepEqual(await snapshot(root),before);
+});
+test("unowned Claude bootstraps and reserved or non-CLAUDE.md targets are refused",async t=>{
+ const root=await fixture(t);await writeFile(path.join(root,"CLAUDE.md"),buildBootstrap("4.3.2"));
  const before=await snapshot(root);
  await assert.rejects(installBridgecode(options(root)),/Unrecorded bootstrap/);
  assert.deepEqual(await snapshot(root),before);
  const clean=await fixture(t);
- for(const p of [".CODEX/config.toml","AGENTIC/architecture.md","agents.md",".git/config",".GIT/config",".agents/instructions.md"]){
-  await assert.rejects(installBridgecode({...options(clean),instructionFile:[p]}),/reserved|alias/i);
-  assert.deepEqual(await snapshot(clean),{});
+ for(const p of ["AGENTS.md","GEMINI.md",".git/CLAUDE.md",".GIT/CLAUDE.md","agentic/CLAUDE.md","AGENTIC/CLAUDE.md",".codex/CLAUDE.md","bridgecode/CLAUDE.md","BRIDGECODE/CLAUDE.md",".bridgecode/CLAUDE.md",".claude/settings.json",".claude/bridgecode/CLAUDE.md",".claude/agents/CLAUDE.md","../CLAUDE.md"]){
+  await assert.rejects(installBridgecode({...options(clean),instructionFile:[p]}),/reserved|CLAUDE\.md file|Unsafe/i,p);
+  assert.deepEqual(await snapshot(clean),{},p);
  }
+ await assert.rejects(installBridgecode({...options(clean),instructionFiles:"both"}),/Invalid --instruction-files/);
 });
 test("new release path conflicts stop before writes even when bytes match",async t=>{
  const root=await fixture(t);await installBridgecode(options(root));
- await writeFile(path.join(root,"new-file.md"),"repository owned");
+ const rel=".claude/bridgecode/new-file.md";
+ await writeFile(path.join(root,rel),"repository owned");
  const pkg=await simulatedPackage(t),mp=path.join(pkg,"payload-manifest.json"),m=JSON.parse(await readFile(mp));
- await writeFile(path.join(pkg,"new-file.md"),"new release");m.files["new-file.md"]=sha256("new release");await writeFile(mp,JSON.stringify(m));
+ await writeFile(path.join(pkg,PAYLOAD_DIR,rel),"new release");m.files[rel]=sha256("new release");await writeFile(mp,JSON.stringify(m));
  const before=await snapshot(root);
  await assert.rejects(updateBridgecode({project:root,packageRoot:pkg}),/conflicts/);
  assert.deepEqual(await snapshot(root),before);
- await writeFile(path.join(root,"new-file.md"),"new release");const identical=await snapshot(root);
+ await writeFile(path.join(root,rel),"new release");const identical=await snapshot(root);
  await assert.rejects(updateBridgecode({project:root,packageRoot:pkg}),/conflicts/);
  assert.deepEqual(await snapshot(root),identical);
 });
-test("additional malformed bootstrap markers make doctor and update fail without writes",async t=>{
- const root=await fixture(t);await installBridgecode({...options(root),instructionFiles:"claude"});
- const p=path.join(root,"CLAUDE.md"),valid=await readFile(p,"utf8");
- for(const suffix of ["<!-- bridgecode:bootstrap:start broken -->","<!-- bridgecode:bootstrap:end broken -->"]){
-  await writeFile(p,valid+"\n"+suffix);const before=await snapshot(root);
-  assert.equal((await inspectInstallation(options(root))).ok,false);
-  await assert.rejects(updateBridgecode(options(root)),/markers/);
-  assert.deepEqual(await snapshot(root),before);
- }
-});
-test("reserved payload and forged installed bootstrap paths are rejected",async t=>{
- const pkg=await simulatedPackage(t),mp=path.join(pkg,"payload-manifest.json"),manifest=JSON.parse(await readFile(mp));
- manifest.files[".git/config"]=sha256("x");await writeFile(mp,JSON.stringify(manifest));
- await assert.rejects(loadPackageContext(pkg),/Reserved payload/);
+test("edited hook entry and unknown installed version are diagnosed without writes",async t=>{
  const root=await fixture(t);await installBridgecode(options(root));
- const statePath=path.join(root,".bridgecode/installation.json"),state=JSON.parse(await readFile(statePath));
- state.instructionFiles=[".git/config"];state.bootstraps={".git/config":sha256(buildBootstrap("4.3.0"))};
- await writeFile(statePath,JSON.stringify(state));const before=await snapshot(root);
- await assert.rejects(updateBridgecode(options(root)),/Reserved bootstrap/);
- assert.equal((await inspectInstallation(options(root))).ok,false);assert.deepEqual(await snapshot(root),before);
-});
-test("edited obsolete legacy instructions are preserved and block migration",async t=>{
- const root=await fixture(t),files=await legacyFiles();
- for(const [p,s]of Object.entries(files)){await mkdir(path.dirname(path.join(root,p)),{recursive:true});await writeFile(path.join(root,p),s);}
- await writeFile(path.join(root,"bridgecode/general-functions.md"),"local changes must survive");
- const before=await snapshot(root);
- await assert.rejects(installBridgecode(options(root)),/Retired managed file was modified/);
- assert.deepEqual(await snapshot(root),before);
-});
-test("unknown version and edited hook entry are diagnosed without writes",async t=>{
- const root=await fixture(t);await installBridgecode(options(root));
- const p=path.join(root,".codex/hooks.json"),c=JSON.parse(await readFile(p));
+ const p=path.join(root,".claude/settings.json"),c=JSON.parse(await readFile(p));
  c.hooks.UserPromptSubmit[0].hooks[0].timeout=99;await writeFile(p,JSON.stringify(c));
  const before=await snapshot(root);assert.equal((await inspectInstallation(options(root))).ok,false);
  await assert.rejects(updateBridgecode(options(root)),/hook entry conflict/);assert.deepEqual(await snapshot(root),before);
  const clean=await fixture(t);await installBridgecode(options(clean));
- const mp=path.join(clean,".bridgecode/installation.json"),m=JSON.parse(await readFile(mp));m.version="4.2.7";await writeFile(mp,JSON.stringify(m));
+ const mp=path.join(clean,METADATA_PATH),m=JSON.parse(await readFile(mp));m.version="4.2.7";await writeFile(mp,JSON.stringify(m));
  const state=await snapshot(clean);await assert.rejects(updateBridgecode(options(clean)),/trusted migration snapshot/);assert.deepEqual(await snapshot(clean),state);
+});
+test("unrecorded Bridgecode hook entry and invalid settings.json fail without writes",async t=>{
+ const root=await fixture(t);await mkdir(path.join(root,".claude"));
+ await writeFile(path.join(root,".claude/settings.json"),"{ not json");let before=await snapshot(root);
+ await assert.rejects(installBridgecode(options(root)),/not JSON/);assert.deepEqual(await snapshot(root),before);
+ await writeFile(path.join(root,".claude/settings.json"),JSON.stringify({hooks:{UserPromptSubmit:[{hooks:[{type:"command",command:'node "$CLAUDE_PROJECT_DIR/.claude/hooks/bridgecode-turn.mjs"'}]}]}}));before=await snapshot(root);
+ await assert.rejects(installBridgecode(options(root)),/Unrecorded Bridgecode hook entry/);assert.deepEqual(await snapshot(root),before);
+ await writeFile(path.join(root,".claude/settings.json"),JSON.stringify({hooks:[]}));before=await snapshot(root);
+ await assert.rejects(installBridgecode(options(root)),/Invalid hooks configuration/);assert.deepEqual(await snapshot(root),before);
+});
+test("update without an installation is refused",async t=>{
+ const root=await fixture(t);
+ await assert.rejects(updateBridgecode(options(root)),/not installed; run install/);
+ assert.deepEqual(await snapshot(root),{});
 });
